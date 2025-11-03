@@ -6,6 +6,8 @@ import subprocess
 import logging
 import sys
 import multiprocessing
+from flexible_api_manager import get_api_manager
+from model_config import get_model_config_manager
 
 '''if you want to add new model family and model name, please add them in both the following function and argparse choices.'''
 def get_model_name(model_family):
@@ -24,7 +26,15 @@ def get_model_name(model_family):
     else:
         raise ValueError(f"Unknown model family: {model_family}")
     
-def map_model_name_to_api_name(model_name: str) -> str:
+def map_model_name_to_api_name(model_name: str, config_manager=None) -> str:
+    """Map model name to API name, supporting config manager for local models"""
+    # Try to use config manager first
+    if config_manager:
+        model_config = config_manager.get_model_config(model_name)
+        if model_config:
+            return model_config.api_name
+    
+    # Fallback to hardcoded mappings for backward compatibility
     if model_name == 'gpt-4o':
         return 'gpt-4o-2024-08-06'
     elif model_name == 'gpt-4o-mini':
@@ -90,7 +100,8 @@ def map_model_name_to_api_name(model_name: str) -> str:
         return 'meta-llama/llama-4-maverick'
 
     else:
-        raise ValueError(f"Unsupported model name: {model_name}")
+        # For local models or unknown models, return the name as-is
+        return model_name
 
 def run_evaluation(family, model, task_folder, eva_mode, n_runs, difficulty_folder, task_id_stem, \
     k, history_path, max_turns, thinking_mode, platform_path):
@@ -132,13 +143,8 @@ def main():
     paths = PathManager()
     parser = argparse.ArgumentParser(description='Oracle-Benchmark')
     evaluator_group = parser.add_argument_group('eva_model')
-    evaluator_group.add_argument('--eva_model_family', type=str, default='gpt', choices=['gpt', 'claude', 'gemini', 'llama', 'qwen', 'deepseek', 'all'], required=True, help='Model family to evaluate.')
-    evaluator_group.add_argument('--eva_model_name', type=str, choices=['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'o1', 'o3-mini', 'o3', 'o4-mini',
-                                                                    'claude-3.5-sonnet', 'claude-3.5-haiku', 'claude-3.7-sonnet', 'claude-4-sonnet', 'claude-4-opus',
-                                                                    'gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro',
-                                                                    'qwen-max', 'qwen-plus', 'qwq-plus', 'qwen3-235b-a22b', 'qwen3-32b', 'qwq-32b',
-                                                                    'llama-4-scout', 'llama-4-marverick',
-                                                                    'deepseek-r1', 'deepseek-v3'], help='Model name to evaluate.')
+    evaluator_group.add_argument('--eva_model_family', type=str, default='gpt', choices=['gpt', 'claude', 'gemini', 'llama', 'qwen', 'deepseek', 'local', 'all'], required=True, help='Model family to evaluate.')
+    evaluator_group.add_argument('--eva_model_name', type=str, help='Model name to evaluate. Can be any model from the config or a local model name.')
     # some models can choose to open the thinking mode. Default is not using thinking mode.
     evaluator_group.add_argument('--thinking_mode', type=bool, default=False, help='Whether to use thinking mode. Only claude3.7, gemini2.5, and qwen3-series support this. Default is False.')
     evaluator_group.add_argument('--task', type=str, default='circuit', choices=['code', 'encryption', 'puzzle', 'game', 'physics', 'circuit'])
@@ -149,6 +155,12 @@ def main():
     evaluator_group.add_argument('--eva_mode', type=str, default='normal', choices=['normal', 'concurrent'], help='Evaluation mode. If n_runs>1 or model_name=all, eva_model must be "concurrent"')
     evaluator_group.add_argument('--max_turns', type=int, default=10, help='when exceed max_turns, stop the interaction and start testing')
     evaluator_group.add_argument('--baseline_test', type=bool, default=False, help='baseline test')
+    
+    # New parameters for flexible model management
+    evaluator_group.add_argument('--model_config', type=str, default=None, help='Path to model configuration YAML file')
+    evaluator_group.add_argument('--local_model_path', type=str, default=None, help='Path to local model (for Hugging Face models)')
+    evaluator_group.add_argument('--vllm_base_url', type=str, default=None, help='Base URL for vLLM server (e.g., http://localhost:8000/v1)')
+    evaluator_group.add_argument('--check_api_keys', action='store_true', help='Check which API keys are available and exit')
 
     platform_group = parser.add_argument_group('platform')
     platform_group.add_argument('--platformgen_model_family', type=str, default='gemini', choices=['gpt', 'claude', 'gemini'], help='Model family to generate platform.')  # thinking mode for claude
@@ -162,6 +174,30 @@ def main():
     test_group.add_argument('--test_sample_generator_model_name', type=str, default='gpt-4.1', choices=['gpt-4.1','gpt-4o'], help='Model name to generate test sample.')
 
     args = parser.parse_args()
+    
+    # Initialize API manager and model config manager
+    api_manager = get_api_manager()
+    config_manager = get_model_config_manager(args.model_config)
+    
+    # Check API keys if requested
+    if args.check_api_keys:
+        print("\n=== API Key Status ===")
+        available_keys = api_manager.check_all_available_keys()
+        for provider, available in available_keys.items():
+            status = "✓ Available" if available else "✗ Not found"
+            print(f"{provider:15s}: {status}")
+        
+        print("\n=== Available Model Families ===")
+        available_families = api_manager.get_available_model_families()
+        for family in available_families:
+            print(f"  - {family}")
+        
+        print("\n=== Available Models ===")
+        available_models = config_manager.get_available_models(api_manager)
+        for model_config in available_models:
+            print(f"  - {model_config.name} ({model_config.family}, type: {model_config.type})")
+        
+        sys.exit(0)
 
     # Step 0: A model must pass through baseline test first
     if args.baseline_test:
