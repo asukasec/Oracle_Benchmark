@@ -9,6 +9,7 @@ import json
 from pydantic import BaseModel
 import logging
 from typing import Union
+from flexible_api_manager import get_api_manager
 
 load_dotenv(override=True)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -27,12 +28,15 @@ class Platform:
         self.platformgen_model_family = platformgen_model_family
         self.platformgen_model_name = platformgen_model_name
 
+        # Use flexible API manager
+        api_manager = get_api_manager()
+        
         if self.platformgen_model_family == 'gpt':
-            self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            self.client = api_manager.get_openai_client()
         elif self.platformgen_model_family == 'claude':
-            self.client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+            self.client = api_manager.get_claude_client()
         elif self.platformgen_model_family == 'gemini':
-            self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+            self.client = api_manager.get_gemini_client()
 
         with open(self.paths.platform_path / task / 'platformgen_system_prompt') as f:
             self.platformgen_system_prompt = f.read()
@@ -146,12 +150,15 @@ class PolishModel:
         self.model_family = model_family
         self.model_name = model_name
 
+        # Use flexible API manager
+        api_manager = get_api_manager()
+        
         if self.model_family == 'gpt':
-            self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            self.client = api_manager.get_openai_client()
         elif self.model_family == 'claude':
-            self.client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+            self.client = api_manager.get_claude_client()
         elif self.model_family == 'gemini':
-            self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+            self.client = api_manager.get_gemini_client()
 
         with open(self.paths.platform_path / 'platformpolish_system_prompt', 'r', encoding='utf-8') as f:
             self.system_prompt = f.read()
@@ -349,17 +356,20 @@ class CircuitFormat(BaseModel):
 
 
 class TestSamplesGenerator:
-    def __init__(self, task, model_family, model_name, max_turns):
+    def __init__(self, task, model_family, model_name, max_turns=10):
         self.task = task
         self.model_family = model_family
         self.model_name = model_name
         self.max_turns = max_turns
         self.paths = PathManager()
 
+        # Use flexible API manager
+        api_manager = get_api_manager()
+        
         if self.model_family == 'gpt':
-            self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            self.client = api_manager.get_openai_client()
         elif self.model_family == 'gemini':
-            self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+            self.client = api_manager.get_gemini_client()
 
         with open(self.paths.test_path / task / 'testsamplegen_system_prompt', 'r', encoding='utf-8') as f:
             self.system_prompt = f.read()

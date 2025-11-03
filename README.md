@@ -17,6 +17,7 @@ Please check out the paper for more details, and this repo will detail how to ru
 
 ## 💥 News
 
+- **[2025.11.03]** 🚀 Added flexible API key management and local model support (Hugging Face, vLLM)
 - **[2025.9.22]** 🐛 Fix a bug that caused incorrect GSI task results
 - **[2025.8.27]** 🎯 Paper available in arxiv.
 - **[2025.8.23]** 🎯 We release the code for Oracle Benchmark v1.0.
@@ -49,6 +50,132 @@ We provide three shell files to help quickly reproduce the performance of GPT-4.
     ```
 
 The interaction history will be save under ```./history```, and the results will be saved under ```./results```.
+
+## 🚀 New Features: Flexible Model Management
+
+Oracle Benchmark now supports flexible API key management and local model deployment!
+
+### Check Available API Keys
+
+You can check which API keys are configured and which model families are available:
+
+```bash
+python main.py --eva_model_family gpt --check_api_keys
+```
+
+This will show:
+- Which API keys are configured and available
+- Which model families you can use
+- List of all available models
+
+### Use Only Available Models
+
+You no longer need to configure ALL API keys. The benchmark will only initialize API clients for the models you're actually using:
+
+```bash
+# Only need OpenAI API key to run this
+python main.py --eva_model_family gpt --eva_model_name gpt-4o --task code
+```
+
+### Local Model Support
+
+Oracle Benchmark now supports running evaluations with local open-source models!
+
+#### Using Hugging Face Models
+
+```bash
+# Test with a local Llama model
+python main.py --eva_model_family local --eva_model_name llama-2-7b \
+  --local_model_path meta-llama/Llama-2-7b-chat-hf --task puzzle
+
+# Test with a local Mistral model
+python main.py --eva_model_family local --eva_model_name mistral-7b \
+  --local_model_path mistralai/Mistral-7B-Instruct-v0.2 --task code
+
+# Test with a local Qwen model
+python main.py --eva_model_family local --eva_model_name qwen2-7b \
+  --local_model_path Qwen/Qwen2-7B-Instruct --task encryption
+```
+
+**Note:** To use local models, you need to install additional dependencies:
+```bash
+pip install transformers torch accelerate
+# Optional: for quantization support
+pip install bitsandbytes
+```
+
+#### Using vLLM for Faster Inference
+
+If you have a vLLM server running, you can connect to it:
+
+```bash
+# Start vLLM server (in another terminal)
+vllm serve Qwen/Qwen2-7B-Instruct --port 8000
+
+# Run benchmark with vLLM
+python main.py --eva_model_family local --eva_model_name qwen2-7b \
+  --vllm_base_url http://localhost:8000/v1 --task code
+```
+
+**Note:** To use vLLM, install it with:
+```bash
+pip install vllm
+```
+
+### Custom Model Configuration
+
+You can define your own models in a YAML configuration file:
+
+1. Create a custom configuration file (e.g., `my_models.yaml`):
+
+```yaml
+models:
+  - name: my-llama-7b
+    family: local
+    type: local
+    path: /path/to/my/llama-7b
+    device: cuda
+    load_in_4bit: true  # Use 4-bit quantization to save memory
+
+  - name: my-mistral-vllm
+    family: local
+    type: vllm
+    base_url: http://localhost:8000/v1
+    path: mistralai/Mistral-7B-Instruct-v0.2
+
+  - name: my-qwen-8bit
+    family: local
+    type: local
+    path: Qwen/Qwen2-7B-Instruct
+    load_in_8bit: true
+```
+
+2. Use the configuration file:
+
+```bash
+python main.py --model_config my_models.yaml \
+  --eva_model_family local --eva_model_name my-llama-7b --task code
+```
+
+### Example: Testing Multiple Small Models
+
+```bash
+# Test different local models on the same task
+for model in llama-2-7b mistral-7b qwen2-7b; do
+  python main.py --eva_model_family local --eva_model_name $model \
+    --local_model_path $model --task puzzle
+done
+```
+
+### Backward Compatibility
+
+All existing functionality remains unchanged. If you have all API keys configured, the benchmark works exactly as before:
+
+```bash
+# Traditional usage still works
+python main.py --eva_model_family gpt --eva_model_name gpt-4.1 --task code
+```
+
 
 
 
