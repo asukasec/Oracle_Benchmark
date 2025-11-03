@@ -18,6 +18,8 @@ import time
 import csv
 import requests
 from ckpt import set_current_debug_target, reset_debugger_state
+from flexible_api_manager import get_api_manager
+from local_model_support import get_local_model_manager
 
 load_dotenv(override=True)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -36,7 +38,7 @@ def dynamic_import(module_path, module_name):
     return module
 
 class ReasoningLLM:
-    def __init__(self, model_family, model_name, task, eva_mode, n_runs, difficulty, task_id, thinking_mode, mode):
+    def __init__(self, model_family, model_name, task, eva_mode, n_runs, difficulty, task_id, thinking_mode, mode, local_model_path=None, vllm_base_url=None):
         self.paths = PathManager()
         self.simulation_task_ids = ['double_pendulum', 'harmonic_friction', 'ball_air_resistance']
 
@@ -50,6 +52,8 @@ class ReasoningLLM:
         self.eva_mode = eva_mode
         self.eva_nums = n_runs
         self.mode = mode  # generate or evaluate
+        self.local_model_path = local_model_path
+        self.vllm_base_url = vllm_base_url
 
         with open(self.paths.task_path / task / 'player_system_prompt') as f:
             self.system_prompt = f.read()  # system prompt for each task
@@ -67,16 +71,58 @@ class ReasoningLLM:
                     description=information['description'],
                 )
 
-        self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-        self.claude_client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        self.qwen_client = OpenAI(api_key=os.getenv("ALIBABA_API_KEY"), base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
-        self.deepseek_client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
-        openrouter = os.getenv("OPENROUTER_API_KEY")
-        self.headers = {
-                "Authorization": f"Bearer {openrouter}",
-                "Content-Type": "application/json"
-            }
+        # Use flexible API manager for API clients
+        self.api_manager = get_api_manager()
+        
+        # Initialize clients on-demand based on model family
+        if model_family == 'local':
+            # Initialize local model
+            local_model_manager = get_local_model_manager()
+            if vllm_base_url:
+                self.local_model = local_model_manager.load_model(
+                    model_name, 
+                    model_type="vllm",
+                    base_url=vllm_base_url,
+                    model_path=local_model_path or model_name
+                )
+            else:
+                self.local_model = local_model_manager.load_model(
+                    model_name,
+                    model_type="huggingface",
+                    model_path=local_model_path or model_name
+                )
+            self.client = None
+        else:
+            # Initialize API clients on-demand
+            try:
+                if model_family == 'gpt':
+                    self.client = self.api_manager.get_openai_client()
+                elif model_family == 'claude':
+                    self.client = self.api_manager.get_claude_client()
+                elif model_family == 'gemini':
+                    self.client = self.api_manager.get_gemini_client()
+                elif model_family == 'qwen':
+                    self.client = self.api_manager.get_qwen_client()
+                elif model_family == 'deepseek':
+                    self.client = self.api_manager.get_deepseek_client()
+                elif model_family == 'llama':
+                    self.headers = self.api_manager.get_openrouter_headers()
+                    self.client = None
+                else:
+                    raise ValueError(f"Unknown model family: {model_family}")
+            except ValueError as e:
+                logging.error(f"Failed to initialize API client: {e}")
+                raise
+            
+            self.local_model = None
+        
+        # For backward compatibility, keep these attributes
+        self.openai_client = self.client if model_family == 'gpt' else None
+        self.gemini_client = self.client if model_family == 'gemini' else None
+        self.claude_client = self.client if model_family == 'claude' else None
+        self.qwen_client = self.client if model_family == 'qwen' else None
+        self.deepseek_client = self.client if model_family == 'deepseek' else None
+
 
         if model_family == 'gpt':
             self.client = self.openai_client
@@ -115,6 +161,12 @@ class ReasoningLLM:
             self.messages = [{"role": "system", "content": [{"text": self.system_prompt}]},
                              {"role": "user", "content": [{"text": self.task_intro}]},
                              {"role": "assistant", "content": [{"text": "I understand the rules. I will not output any unrelated text! Let us start the interaction."}]}]
+            self.history =  copy.deepcopy(self.messages)
+        elif model_family == 'local':
+            # Local models use standard message format
+            self.messages = [{"role": "system", "content": self.system_prompt},
+                             {"role": "user", "content": self.task_intro},
+                             {"role": "assistant", "content": 'I understand the rules. I will not output any unrelated text! Let us start the interaction.'}]
             self.history =  copy.deepcopy(self.messages)
 
     def save_result(self, output_dir, result):
@@ -365,6 +417,25 @@ class ReasoningLLM:
             response = response['choices'][0]['message']['content']
             self.messages.append({"role": "assistant", "content": [{"text": str(response)}]})
             self.history.append({"role": "assistant", "content": response})
+
+        elif self.model_family == 'local':
+            # Handle local models (Hugging Face transformers or vLLM)
+            self.messages.append({"role": "user", "content": str(input)})
+            self.history.append({"role": "user", "content": str(input)})
+            
+            try:
+                response = self.local_model.generate(
+                    messages=self.messages,
+                    max_tokens=500,
+                    temperature=0.0
+                )
+                self.messages.append({"role": "assistant", "content": response})
+                self.history.append({"role": "assistant", "content": response})
+            except Exception as e:
+                logging.error(f"Error generating response from local model: {e}")
+                response = f"Error: {str(e)}"
+                self.messages.append({"role": "assistant", "content": response})
+                self.history.append({"role": "assistant", "content": response})
 
         '''If mistake happens, filter them in self.messages'''
         if self.has_format_mistake(str(input)):
