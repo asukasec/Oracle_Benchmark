@@ -1,0 +1,84 @@
+# Model Configuration for Oracle Benchmark
+# Add your custom models here
+
+models:
+  # Example: Local Hugging Face model
+  # - name: llama-2-7b
+  #   family: local
+  #   type: local
+  #   path: meta-llama/Llama-2-7b-chat-hf  # Can be model ID or local path
+  #   device: auto  # auto, cuda, cpu
+  #   load_in_8bit: false
+  #   load_in_4bit: false
+  #   extra_params: {}
+
+  # Example: vLLM model via API endpoint
+  # - name: qwen-7b-vllm
+  #   family: local
+  #   type: vllm
+  #   base_url: http://localhost:8000/v1
+  #   path: Qwen/Qwen2-7B-Instruct
+  #   requires_api_key: false
+
+  # Example: Custom local model
+  # - name: mistral-7b
+  #   family: local
+  #   type: local
+  #   path: mistralai/Mistral-7B-Instruct-v0.2
+  #   device: cuda
+  #   load_in_4bit: true
+  #   extra_params:
+  #     torch_dtype: float16
+
+  # Preset local models (uncomment to use)
+  
+  # Llama models
+  # - name: llama-2-7b
+  #   family: local
+  #   type: local
+  #   path: meta-llama/Llama-2-7b-chat-hf
+  
+  # - name: llama-3-8b
+  #   family: local
+  #   type: local
+  #   path: meta-llama/Meta-Llama-3-8B-Instruct
+  
+  # Mistral models
+  # - name: mistral-7b
+  #   family: local
+  #   type: local
+  #   path: mistralai/Mistral-7B-Instruct-v0.2
+  
+  # - name: mistral-7b-v0.3
+  #   family: local
+  #   type: local
+  #   path: mistralai/Mistral-7B-Instruct-v0.3
+  
+  # Qwen models
+  # - name: qwen2-7b
+  #   family: local
+  #   type: local
+  #   path: Qwen/Qwen2-7B-Instruct
+  
+  # - name: qwen2.5-7b
+  #   family: local
+  #   type: local
+  #   path: Qwen/Qwen2.5-7B-Instruct
+  
+  # Phi models
+  # - name: phi-3-mini
+  #   family: local
+  #   type: local
+  #   path: microsoft/Phi-3-mini-4k-instruct
+  
+  # Gemma models
+  # - name: gemma-2-9b
+  #   family: local
+  #   type: local
+  #   path: google/gemma-2-9b-it
+  
+  # Yi models
+  # - name: yi-1.5-9b
+  #   family: local
+  #   type: local
+  #   path: 01-ai/Yi-1.5-9B-Chat
